@@ -99,3 +99,6 @@ if submit:
     # =========================
     st.success("✅ Recomendación generada")
     st.text(resultado)
+
+    proba = modelo_accion.predict_proba(df)
+    st.write(proba)

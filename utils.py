@@ -27,13 +27,13 @@ def predecir_caso_personalizado(
     
     df_nuevo = pd.DataFrame([caso])
     
-    pred_accion = modelo_accion.predict(df_nuevo)[0]
-    pred_estrategia = modelo_estrategia.predict(df_nuevo)[0]
+    pred_accion = modelo_accion.predict(df_nuevo)[0][0]
+    pred_estrategia = modelo_estrategia.predict(df_nuevo)[0][0]
     
     df_nuevo_rec = df_nuevo.copy()
     df_nuevo_rec["estrategia"] = pred_estrategia
     
-    pred_recurso = modelo_recurso.predict(df_nuevo_rec)[0]
+    pred_recurso = modelo_recurso.predict(df_nuevo_rec)[0][0]
     
     nivel = caso["nivel_logro_docente"]
     rango = sugerir_rango_calificacion(nivel)
