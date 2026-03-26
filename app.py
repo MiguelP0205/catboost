@@ -110,5 +110,5 @@ if submit:
     st.write("🔎 Probabilidades acción:")
     st.write(proba)
 
-    proba = modelo_accion.predict_proba(df_nuevo)
+    proba = modelo_accion.predict_proba(df_debug)
     st.write(proba)
