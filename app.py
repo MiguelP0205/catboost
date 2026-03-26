@@ -99,16 +99,3 @@ if submit:
     # =========================
     st.success("✅ Recomendación generada")
     st.text(resultado)
-
-    import pandas as pd
-
-    df_debug = pd.DataFrame([caso])
-    st.write("📊 Input al modelo:")
-    st.write(df_debug)
-
-    proba = modelo_accion.predict_proba(df_debug)
-    st.write("🔎 Probabilidades acción:")
-    st.write(proba)
-
-    proba = modelo_accion.predict_proba(df_debug)
-    st.write(proba)
