@@ -69,7 +69,7 @@ with st.form("formulario"):
 
     tipo = st.selectbox("Tipo de competencia", TIPOS)
 
-    submit = st.form_submit_button("🔍 Generar recomendación")
+    submit = st.form_submit_button("🔍 Generar")
 
 # =========================
 # PREDICCIÓN
