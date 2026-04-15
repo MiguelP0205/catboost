@@ -1,101 +1,116 @@
 import streamlit as st
-from catboost import CatBoostClassifier
-from utils import predecir_caso_personalizado
+import pandas as pd
+import io
+from utils import load_models_and_encoders, predecir_casos_personalizados_desde_df, generate_pdf_report
 
-# =========================
-# CARGAR MODELOS
-# =========================
+st.set_page_config(layout="wide", page_title="Recomendador de Estrategias Educativas")
+
+# --- Load Models and Encoders ---
 @st.cache_resource
-def cargar_modelos():
-    modelo_accion = CatBoostClassifier()
-    modelo_accion.load_model("models/modelo_accion.cbm")
-    
-    modelo_estrategia = CatBoostClassifier()
-    modelo_estrategia.load_model("models/modelo_estrategia.cbm")
-    
-    modelo_recurso = CatBoostClassifier()
-    modelo_recurso.load_model("models/modelo_recurso.cbm")
-    
-    return modelo_accion, modelo_estrategia, modelo_recurso
+def get_models():
+    return load_models_and_encoders()
 
-modelo_accion, modelo_estrategia, modelo_recurso = cargar_modelos()
+try:
+    modelo_accion, modelo_estrategia, modelo_recurso, modelo_nivel_logro_docente, encoders, X_train_columns, X_train_rec_columns = get_models()
+    st.success("Modelos y codificadores cargados exitosamente.")
+except Exception as e:
+    st.error(f"Error al cargar modelos: {e}")
+    st.stop()
 
-# =========================
-# OPCIONES (AJUSTA SEGÚN TU DATASET)
-# =========================
-# =========================
-# OPCIONES (DESDE COLAB)
-# =========================
+# --- Helper function for Excel download ---
+def to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Resultados')
+    processed_data = output.getvalue()
+    return processed_data
 
-CURSOS = ["8vo", "9no", "10mo"]
+# --- Streamlit UI ---
+st.title("Recomendador de Estrategias Educativas")
+st.markdown("Esta aplicación predice la acción, estrategia y recurso pedagógico más adecuado para un grupo de estudiantes basado en sus datos de desempeño.")
 
-BLOQUES = ["Algebra", "Geometria", "Estadistica"]
+# Input form
+st.header("1. Cargar Datos de Estudiantes")
+st.markdown("Por favor, suba un archivo Excel con los datos de sus estudiantes. El archivo debe contener las siguientes columnas:")
+st.markdown("**Columnas Requeridas:** `nombre_estudiante`, `curso`, `bloque`, `destreza`, `nivel_desempeno_estudiante`, `nivel_participacion_estudiante`, `complejidad_destreza`, `carga_cognitiva`, `tipo_competencia`, `tiempo_ensenanza`, `disponibilidad_tiempo`")
+st.markdown("**Ejemplo de valores:**")
+st.markdown("`curso`: '8vo', '9no', '10mo'")
+st.markdown("`bloque`: 'Algebra', 'Geometria', 'Estadistica'")
+st.markdown("`destreza`: 'Resolver ecuaciones lineales', 'Interpretar graficos', etc.")
+st.markdown("`nivel_desempeno_estudiante`, `nivel_participacion_estudiante`: 0, 1, 2, 3 (0 si no asistió/no hay datos, 1 bajo, 2 medio, 3 alto)")
+st.markdown("`complejidad_destreza`, `carga_cognitiva`: 1, 2, 3")
+st.markdown("`tipo_competencia`: 'Conceptual', 'Procedimental', 'Resolucion_problemas'")
+st.markdown("`tiempo_ensenanza`, `disponibilidad_tiempo`: Valores numéricos (horas)")
 
-DESTREZAS = [
-    "Resolver ecuaciones lineales",
-    "Operar con fracciones",
-    "Calcular areas",
-    "Interpretar graficos",
-    "Aplicar proporcionalidad"
-]
+uploaded_file = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
 
-TIPOS = [
-    "Conceptual",
-    "Procedimental",
-    "Resolucion_problemas"
-]
+df_student_data = None
+if uploaded_file is not None:
+    try:
+        df_student_data = pd.read_excel(uploaded_file)
+        st.success("Archivo cargado exitosamente!")
+        st.dataframe(df_student_data.head())
 
-NIVELES = [1, 2, 3, 4, 5]
+        # --- Make Predictions ---
+        st.header("2. Resultados de Predicción")
+        full_report, df_grades_for_download = predecir_casos_personalizados_desde_df(
+            modelo_accion, modelo_estrategia, modelo_recurso, modelo_nivel_logro_docente,
+            df_student_data, encoders, X_train_columns, X_train_rec_columns
+        )
+        st.text(full_report)
 
-# =========================
-# INTERFAZ
-# =========================
-st.set_page_config(page_title="Sistema de Recomendación", page_icon="📘")
+        # --- Download Current Grades (Excel) ---
+        st.header("3. Descargar Calificaciones")
+        st.markdown("Puedes descargar una planilla con las calificaciones sugeridas para la destreza analizada.")
+        st.download_button(
+            label="Descargar Planilla de Calificaciones Actual",
+            data=to_excel(df_grades_for_download),
+            file_name="planilla_calificaciones_actual.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-st.title("📘 Sistema de Recomendación Docente")
-st.markdown("Completa el formulario para generar una recomendación pedagógica.")
+        # --- Download PDF Report ---
+        st.subheader("4. Descargar Reporte en PDF")
+        pdf_buffer = generate_pdf_report(full_report)
+        st.download_button(
+            label="Descargar Reporte Pedagógico (PDF)",
+            data=pdf_buffer.getvalue(),
+            file_name="reporte_pedagogico.pdf",
+            mime="application/pdf"
+        )
 
-with st.form("formulario"):
-    
-    nombre = st.text_input("👤 Nombre del estudiante")
+        # --- Optional: Upload and Merge Previous Grades ---
+        st.subheader("Opcional: Fusionar con Planilla de Calificaciones Existente")
+        st.markdown("Si tienes una planilla de calificaciones previa (Excel con 'nombre_estudiante' y otras destrezas), puedes subirla y fusionarla con los resultados actuales.")
+        uploaded_grades_file = st.file_uploader("Sube tu planilla de calificaciones previa", type=["xlsx"], key="previous_grades_uploader")
 
-    curso = st.selectbox("Curso", CURSOS)
-    bloque = st.selectbox("Bloque", BLOQUES)
-    destreza = st.selectbox("Destreza evaluada", DESTREZAS)
+        if uploaded_grades_file is not None:
+            try:
+                df_previous_grades = pd.read_excel(uploaded_grades_file)
+                st.success("Planilla de calificaciones previa cargada!")
+                st.dataframe(df_previous_grades.head())
 
-    nivel = st.selectbox("Nivel de logro docente", NIVELES)
-    complejidad = st.selectbox("Complejidad de la destreza", NIVELES)
-    carga = st.selectbox("Carga cognitiva", NIVELES)
+                # Merge logic
+                # Assuming 'nombre_estudiante' is the common key
+                if 'nombre_estudiante' in df_previous_grades.columns:
+                    # Use outer merge to keep all students from both dataframes
+                    df_merged_grades = pd.merge(df_previous_grades, df_grades_for_download, on='nombre_estudiante', how='outer')
+                    st.subheader("Planilla de Calificaciones Fusionada")
+                    st.dataframe(df_merged_grades)
 
-    tipo = st.selectbox("Tipo de competencia", TIPOS)
+                    st.download_button(
+                        label="Descargar Planilla de Calificaciones Fusionada",
+                        data=to_excel(df_merged_grades),
+                        file_name="planilla_calificaciones_fusionada.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                else:
+                    st.warning("La planilla previa debe contener la columna 'nombre_estudiante' para poder fusionar.")
+            except Exception as e_grades:
+                st.error(f"Error al leer la planilla de calificaciones previa: {e_grades}")
 
-    submit = st.form_submit_button("🔍 Generar")
 
-# =========================
-# PREDICCIÓN
-# =========================
-if submit:
-    
-    caso = {
-        "curso": curso,
-        "bloque": bloque,
-        "destreza": destreza,
-        "nivel_logro_docente": nivel,
-        "complejidad_destreza": complejidad,
-        "carga_cognitiva": carga,
-        "tipo_competencia": tipo
-    }
-
-    resultado = predecir_caso_personalizado(
-        modelo_accion,
-        modelo_estrategia,
-        modelo_recurso,
-        caso,
-        nombre
-    )
-
-    # =========================
-    # RESULTADO
-    # =========================
-    st.success("✅ Recomendación generada")
-    st.text(resultado)
+    except Exception as e:
+        st.error(f"Error al leer el archivo Excel. Asegúrate de que el formato sea correcto y contenga todas las columnas requeridas: {e}")
+else:
+    st.info("Esperando que subas un archivo Excel para analizar.")
