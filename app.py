@@ -49,7 +49,7 @@ if uploaded_file is not None:
     try:
         df_student_data = pd.read_excel(uploaded_file)
         st.success("Archivo cargado exitosamente!")
-        st.dataframe(df_student_data.head())
+        st.dataframe(df_student_data.head()) # Vista previa de los primeros 5 estudiantes del curso en el excel
 
         # --- Make Predictions ---
         st.header("2. Resultados de Predicción")
