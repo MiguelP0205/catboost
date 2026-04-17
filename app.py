@@ -1,14 +1,15 @@
 import streamlit as st
 import pandas as pd
 import io
-from utils import load_models_and_encoders, predecir_casos_personalizados_desde_df, generate_pdf_report, to_excel
+#from utils import load_models_and_encoders, predecir_casos_personalizados_desde_df, generate_pdf_report, to_excel
+import utils
 
 st.set_page_config(layout="wide", page_title="Recomendador Pedagógico")
 
 # --- Load Models and Encoders ---
 @st.cache_resource
 def get_models_and_encoders():
-    return load_models_and_encoders()
+    return utils.load_models_and_encoders()
 
 try:
     modelo_accion, modelo_estrategia, modelo_recurso, encoders, X_train_columns, X_train_rec_columns = get_models_and_encoders()
@@ -57,7 +58,7 @@ if uploaded_file is not None:
 
         # --- Make Predictions ---
         st.header("2. Resultados de Predicción")
-        full_report, df_grades_for_download = predecir_casos_personalizados_desde_df(
+        full_report, df_grades_for_download = utils.predecir_casos_personalizados_desde_df(
             modelo_accion, modelo_estrategia, modelo_recurso,
             df_student_data, encoders, X_train_columns, X_train_rec_columns
         )
@@ -68,14 +69,14 @@ if uploaded_file is not None:
         st.markdown("Puedes descargar una planilla con las calificaciones sugeridas para la destreza analizada.")
         st.download_button(
             label="Descargar Planilla de Calificaciones Actual",
-            data=to_excel(df_grades_for_download),
+            data=utils.to_excel(df_grades_for_download),
             file_name="planilla_calificaciones_prueba_actual.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
         # --- Download PDF Report ---
         st.subheader("4. Descargar Reporte en PDF")
-        pdf_buffer = generate_pdf_report(full_report)
+        pdf_buffer = utils.generate_pdf_report(full_report)
         st.download_button(
             label="Descargar Reporte Pedagógico (PDF)",
             data=pdf_buffer.getvalue(),
@@ -104,7 +105,7 @@ if uploaded_file is not None:
 
                     st.download_button(
                         label="Descargar Planilla de Calificaciones Fusionada",
-                        data=to_excel(df_merged_grades),
+                        data=utils.to_excel(df_merged_grades),
                         file_name="nueva_planilla_calificaciones_completa.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
