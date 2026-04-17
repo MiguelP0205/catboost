@@ -20,7 +20,7 @@ except Exception as e:
 
 # --- Streamlit UI ---
 st.title("Sistema de Recomendaciones Educativas")
-st.markdown("Esta aplicación predice la acción, estrategia y recurso pedagógico más adecuado para un grupo de estudiantes basado en sus datos de desempeño.")
+st.markdown("Esta aplicación predice la acción, estrategia y recurso pedagógico más adecuado para un grupo de estudiantes basado en el nivel de desempeño de una prueba.")
 st.markdown("---")
 
 # Input form
