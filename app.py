@@ -1,33 +1,26 @@
 import streamlit as st
 import pandas as pd
 import io
-from utils import load_models_and_encoders, predecir_casos_personalizados_desde_df, generate_pdf_report
+from utils import load_models_and_encoders, predecir_casos_personalizados_desde_df, generate_pdf_report, to_excel
 
-st.set_page_config(layout="wide", page_title="Recomendador de Estrategias Educativas")
+st.set_page_config(layout="wide", page_title="Recomendador Pedagógico")
 
 # --- Load Models and Encoders ---
 @st.cache_resource
-def get_models():
+def get_models_and_encoders():
     return load_models_and_encoders()
 
 try:
-    modelo_accion, modelo_estrategia, modelo_recurso, modelo_nivel_logro_docente, encoders, X_train_columns, X_train_rec_columns = get_models()
+    modelo_accion, modelo_estrategia, modelo_recurso, encoders, X_train_columns, X_train_rec_columns = get_models_and_encoders()
     st.success("Modelos y codificadores cargados exitosamente.")
 except Exception as e:
-    st.error(f"Error al cargar modelos: {e}")
+    st.error(f"Error al cargar los modelos y encoders: {e}")
     st.stop()
-
-# --- Helper function for Excel download ---
-def to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Resultados')
-    processed_data = output.getvalue()
-    return processed_data
 
 # --- Streamlit UI ---
 st.title("Recomendador de Estrategias Educativas")
 st.markdown("Esta aplicación predice la acción, estrategia y recurso pedagógico más adecuado para un grupo de estudiantes basado en sus datos de desempeño.")
+st.markdown("---")
 
 # Input form
 st.header("1. Cargar Datos de Estudiantes")
@@ -48,13 +41,24 @@ df_student_data = None
 if uploaded_file is not None:
     try:
         df_student_data = pd.read_excel(uploaded_file)
+
+        required_cols = [
+            'nombre_estudiante', 'curso', 'bloque', 'destreza', 'nivel_desempeno_estudiante',
+            'nivel_participacion_estudiante', 'complejidad_destreza', 'carga_cognitiva',
+            'tipo_competencia', 'tiempo_ensenanza', 'disponibilidad_tiempo'
+        ]
+
+        if not all(col in df_student_data.columns for col in required_cols):
+            st.error("El archivo Excel no contiene todas las columnas requeridas. Por favor, verifica el formato.")
+            df_student_data = pd.DataFrame() # Clear dataframe if columns are missing
+
         st.success("Archivo cargado exitosamente!")
         st.dataframe(df_student_data.head()) # Vista previa de los primeros 5 estudiantes del curso en el excel
 
         # --- Make Predictions ---
         st.header("2. Resultados de Predicción")
         full_report, df_grades_for_download = predecir_casos_personalizados_desde_df(
-            modelo_accion, modelo_estrategia, modelo_recurso, modelo_nivel_logro_docente,
+            modelo_accion, modelo_estrategia, modelo_recurso,
             df_student_data, encoders, X_train_columns, X_train_rec_columns
         )
         st.text(full_report)
@@ -65,7 +69,7 @@ if uploaded_file is not None:
         st.download_button(
             label="Descargar Planilla de Calificaciones Actual",
             data=to_excel(df_grades_for_download),
-            file_name="planilla_calificaciones_actual.xlsx",
+            file_name="planilla_calificaciones_prueba_actual.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
@@ -101,7 +105,7 @@ if uploaded_file is not None:
                     st.download_button(
                         label="Descargar Planilla de Calificaciones Fusionada",
                         data=to_excel(df_merged_grades),
-                        file_name="planilla_calificaciones_fusionada.xlsx",
+                        file_name="nueva_planilla_calificaciones_completa.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                 else:
@@ -111,6 +115,6 @@ if uploaded_file is not None:
 
 
     except Exception as e:
-        st.error(f"Error al leer el archivo Excel. Asegúrate de que el formato sea correcto y contenga todas las columnas requeridas: {e}")
+        st.error(f"Error al leer el archivo Excel: {e}")
 else:
     st.info("Esperando que subas un archivo Excel para analizar.")

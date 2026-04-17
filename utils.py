@@ -1,8 +1,9 @@
 import pandas as pd
 import random
-from collections import Counter
-from sklearn.preprocessing import LabelEncoder
 import joblib
+from collections import Counter
+
+# Imports for PDF generation
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -10,6 +11,43 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib.units import inch
 
+# --- Global definitions (from Colab notebook) ---
+destreza_map = {
+    # ---------- Resolución ----------
+    "Resolver ecuaciones lineales": "Resolucion",
+    "Resolver ecuaciones cuadraticas": "Resolucion",
+    "Resolver sistemas de ecuaciones": "Resolucion",
+
+    # ---------- Procedimiento ----------
+    "Operar con fracciones": "Procedimiento",
+    "Simplificar expresiones": "Procedimiento",
+    "Aplicar algoritmos": "Procedimiento",
+
+    # ---------- Aplicación ----------
+    "Calcular areas": "Aplicacion",
+    "Aplicar proporcionalidad": "Aplicacion",
+    "Resolver problemas geometricos": "Aplicacion",
+
+    # ---------- Interpretación ----------
+    "Interpretar graficos": "Interpretacion",
+    "Analizar datos": "Interpretacion",
+    "Leer tablas": "Interpretacion",
+
+    # ---------- Modelación ----------
+    "Plantear ecuaciones": "Modelacion",
+    "Traducir problemas a lenguaje matematico": "Modelacion",
+
+    # ---------- Razonamiento ----------
+    "Justificar procedimientos": "Razonamiento",
+    "Argumentar soluciones": "Razonamiento"
+}
+
+categorical_cols_for_encoding = [
+    "curso", "bloque", "destreza", "tipo_competencia",
+    "accion_docente", "estrategia", "recurso", "nivel_logro_docente"
+]
+
+# --- Helper Functions ---
 def sugerir_rango_calificacion(nivel):
     if nivel == 1:
         return "1 - 6"
@@ -17,11 +55,10 @@ def sugerir_rango_calificacion(nivel):
         return "7 - 8"
     elif nivel == 3:
         return "9 - 10"
-    return "N/A"
 
 def calcular_nivel_final_estudiante(nivel_desempeno, nivel_participacion):
     if nivel_desempeno == 0 and nivel_participacion == 0:
-        return 1  # Lowest level if both are 0
+        return 1
     average_nivel = (nivel_desempeno + nivel_participacion) / 2
     if average_nivel <= 1.5:
         return 1
@@ -30,47 +67,31 @@ def calcular_nivel_final_estudiante(nivel_desempeno, nivel_participacion):
     else:
         return 3
 
-destreza_map = {
-    "Resolver ecuaciones lineales": "Resolucion",
-    "Resolver ecuaciones cuadraticas": "Resolucion",
-    "Resolver sistemas de ecuaciones": "Resolucion",
-    "Operar con fracciones": "Procedimiento",
-    "Simplificar expresiones": "Procedimiento",
-    "Aplicar algoritmos": "Procedimiento",
-    "Calcular areas": "Aplicacion",
-    "Aplicar proporcionalidad": "Aplicacion",
-    "Resolver problemas geometricos": "Aplicacion",
-    "Interpretar graficos": "Interpretacion",
-    "Analizar datos": "Interpretacion",
-    "Leer tablas": "Interpretacion",
-    "Plantear ecuaciones": "Modelacion",
-    "Traducir problemas a lenguaje matematico": "Modelacion",
-    "Justificar procedimientos": "Razonamiento",
-    "Argumentar soluciones": "Razonamiento"
-}
+def map_average_to_level(average_score):
+    if average_score <= 1.5:
+        return 1
+    elif average_score <= 2.5:
+        return 2
+    else:
+        return 3
 
+# --- Model Loading Function ---
 def load_models_and_encoders():
     try:
-        # Models are in 'models/' subfolder
         modelo_accion = joblib.load("models/modelo_accion_rf.joblib")
         modelo_estrategia = joblib.load("models/modelo_estrategia_rf.joblib")
         modelo_recurso = joblib.load("models/modelo_recurso_rf.joblib")
-        modelo_nivel_logro_docente = joblib.load("models/modelo_nivel_logro_docente_rf.joblib")
-        
-        # Encoders and columns lists are in 'models_requirements/' subfolder
         encoders = joblib.load("models_requirements/encoders.joblib")
         X_train_columns = joblib.load("models_requirements/X_train_columns.joblib")
         X_train_rec_columns = joblib.load("models_requirements/X_train_rec_columns.joblib")
-        
-        return modelo_accion, modelo_estrategia, modelo_recurso, modelo_nivel_logro_docente, encoders, X_train_columns, X_train_rec_columns
+        return modelo_accion, modelo_estrategia, modelo_recurso, encoders, X_train_columns, X_train_rec_columns
     except FileNotFoundError as e:
-        raise Exception(f"Error loading model files. Ensure all .joblib files are in the correct subdirectories (models/ and models_requirements/): {e}")
+        raise Exception(f"Error loading model files. Ensure all .joblib files are in the current directory: {e}")
 
 def predecir_casos_personalizados_desde_df(
     modelo_accion,
     modelo_estrategia,
     modelo_recurso,
-    modelo_nivel_logro_docente,
     df_casos_nuevos,
     encoders,
     X_train_columns,
@@ -96,6 +117,7 @@ def predecir_casos_personalizados_desde_df(
     predicciones_accion_encoded_list = []
     predicciones_estrategia_encoded_list = []
     predicciones_recurso_encoded_list = []
+    grades_data = []
 
     first_student_case = df_casos_nuevos.iloc[0].drop('nombre_estudiante').to_dict()
     curso_general = first_student_case['curso']
@@ -112,33 +134,7 @@ def predecir_casos_personalizados_desde_df(
     avg_nivel_desempeno_grupo = df_casos_nuevos['nivel_desempeno_estudiante'].mean()
     avg_nivel_participacion_grupo = df_casos_nuevos['nivel_participacion_estudiante'].mean()
 
-    df_general_pred_input = pd.DataFrame([{
-        "curso": curso_general,
-        "bloque": bloque_general,
-        "destreza": destreza_general,
-        "nivel_desempeno_estudiante": avg_nivel_desempeno_grupo,
-        "complejidad_destreza": complejidad_general,
-        "carga_cognitiva": carga_general,
-        "tipo_competencia": tipo_competencia_general,
-        "tiempo_ensenanza": tiempo_ensenanza_general,
-        "disponibilidad_tiempo": disponibilidad_tiempo_general,
-        "nivel_participacion_estudiante": avg_nivel_participacion_grupo,
-        "pct_bajo": grupo_pct_bajo,
-        "pct_medio": grupo_pct_medio,
-        "pct_alto": grupo_pct_alto
-    }])
-
-    for col in cols_to_encode_for_prediction:
-        if col in df_general_pred_input.columns and col in encoders:
-            df_general_pred_input[col] = encoders[col].transform(df_general_pred_input[col])
-
-    # Ensure column order matches training data for general prediction
-    df_general_pred_input_ordered = df_general_pred_input[X_train_columns]
-
-    pred_nivel_logro_docente_encoded_general = modelo_nivel_logro_docente.predict(df_general_pred_input_ordered).item()
-    pred_nivel_logro_docente_general = encoders['nivel_logro_docente'].inverse_transform([pred_nivel_logro_docente_encoded_general]).item()
-
-    df_grades_output = pd.DataFrame(columns=['nombre_estudiante', destreza_general])
+    pred_nivel_logro_docente_general = map_average_to_level(avg_nivel_desempeno_grupo)
 
     for idx, student_data_series in df_casos_nuevos.iterrows():
         nombre_estudiante = student_data_series['nombre_estudiante']
@@ -164,6 +160,7 @@ def predecir_casos_personalizados_desde_df(
 
         df_nuevo_rec = df_nuevo.copy()
         df_nuevo_rec["estrategia"] = pred_estrategia_encoded
+
         df_nuevo_rec = df_nuevo_rec[X_train_rec_columns]
 
         pred_recurso_encoded = modelo_recurso.predict(df_nuevo_rec).item()
@@ -179,8 +176,10 @@ def predecir_casos_personalizados_desde_df(
         nivel_final_estudiante = calcular_nivel_final_estudiante(nivel_desempeno_estudiante_caso, nivel_participacion_estudiante_caso)
         rango_calificacion_sugerido = sugerir_rango_calificacion(nivel_final_estudiante)
 
-        # Add to grades output DataFrame
-        df_grades_output.loc[len(df_grades_output)] = [nombre_estudiante, rango_calificacion_sugerido]
+        grades_data.append({
+            'nombre_estudiante': nombre_estudiante,
+            destreza_general: rango_calificacion_sugerido
+        })
 
         explicacion_accion = f"La acción '{pred_accion}' se recomienda debido a que el nivel de logro actual del estudiante es Nivel {nivel_desempeno_estudiante_caso}. Considerando la complejidad ({complejidad_general}/3) y la carga cognitiva ({carga_general}/3) de la destreza. "
         if pred_accion == 'reenseñar':
@@ -213,11 +212,11 @@ def predecir_casos_personalizados_desde_df(
         resultado_individual = f"""
 📘 Estudiante: {nombre_estudiante}
 
---- Análisis del Caso Individual ---
+--- Análisis del Caso ---
 *   Nivel de Desempeño del Estudiante: {nivel_desempeno_estudiante_caso}
 *   Nivel de Participación del Estudiante: {nivel_participacion_estudiante_caso}
 
---- Recomendaciones Individuales ---
+--- Recomendaciones ---
 🔹 **Acción docente recomendada:** {pred_accion}
     *   Explicación: {explicacion_accion}
 🔹 **Estrategia sugerida:** {pred_estrategia}
@@ -230,6 +229,8 @@ def predecir_casos_personalizados_desde_df(
 🎯 Rango de calificación sugerido: {rango_calificacion_sugerido}, sobre 10
 """
         resultados_individuales.append(resultado_individual)
+
+    df_grades_for_download = pd.DataFrame(grades_data)
 
     if predicciones_accion_encoded_list:
         predicciones_accion_decoded = encoders['accion_docente'].inverse_transform(predicciones_accion_encoded_list)
@@ -304,10 +305,11 @@ def predecir_casos_personalizados_desde_df(
     *   Explicación: {explicacion_recurso_general}
 
 """
-    full_report_text = resumen_curso + "\n" + "\n-- DETALLE INDIVIDUAL DE ESTUDIANTES --\n\n" + "\n".join(resultados_individuales)
-    return full_report_text, df_grades_output
 
-def generate_pdf_report(report_text, output_filename="reporte_pedagogico.pdf"):
+    full_report_text = resumen_curso + "\n" + "\n-- DETALLE INDIVIDUAL DE ESTUDIANTES --\n\n" + "\n".join(resultados_individuales)
+    return full_report_text, df_grades_for_download
+
+def generate_pdf_report(report_text):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter,
                             rightMargin=inch,
@@ -316,24 +318,28 @@ def generate_pdf_report(report_text, output_filename="reporte_pedagogico.pdf"):
                             bottomMargin=inch)
     styles = getSampleStyleSheet()
 
-    # Custom style for report content
     styles.add(ParagraphStyle(name='ReportContent', alignment=TA_JUSTIFY, fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='SeparatorLine', alignment=TA_JUSTIFY, fontSize=8, leading=10, textColor='#A0A0A0'))
 
     story = []
 
-    # Title
     story.append(Paragraph("<b>Reporte Pedagógico Detallado</b>", styles['h1']))
     story.append(Spacer(1, 0.2 * inch))
 
-    # Add content parsed into paragraphs
     for line in report_text.split('\n'):
         if line.strip().startswith('---'):
             story.append(Spacer(1, 0.1 * inch))
             story.append(Paragraph(f"<b>{line.strip().replace('---', '').strip()}</b>", styles['h2']))
             story.append(Spacer(1, 0.1 * inch))
-        elif line.strip().startswith('*'): # List items
+        elif line.strip().startswith('📘 Estudiante:'):
+            if len(story) > 0 and 'DETALLE INDIVIDUAL DE ESTUDIANTES' in report_text and report_text.find('📘 Estudiante:') < report_text.find(line):
+                story.append(Spacer(1, 0.3 * inch))
+                story.append(Paragraph("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", styles['SeparatorLine']))
+                story.append(Spacer(1, 0.1 * inch))
+            story.append(Paragraph(f"<b>{line.strip()}</b>", styles['ReportContent']))
+        elif line.strip().startswith('*'):
             story.append(Paragraph(line.strip(), styles['ReportContent']))
-        elif line.strip().startswith('🔹'): # Recommendations
+        elif line.strip().startswith('🔹'):
             story.append(Spacer(1, 0.05 * inch))
             story.append(Paragraph(f"<b>{line.strip()}</b>", styles['ReportContent']))
         elif line.strip():
@@ -344,3 +350,10 @@ def generate_pdf_report(report_text, output_filename="reporte_pedagogico.pdf"):
     doc.build(story)
     buffer.seek(0)
     return buffer
+
+def to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Resultados')
+    processed_data = output.getvalue()
+    return processed_data
